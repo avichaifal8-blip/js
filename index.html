@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>Web Battle Royale - Hand Model & Bot Tweak</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #87CEEB; font-family: 'Arial Black', sans-serif; user-select: none; }
+        
+        /* --- מסכי פתיחה וסיום --- */
+        #start-screen, #game-over-screen {
+            position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(20, 20, 40, 0.9); display: flex; flex-direction: column;
+            align-items: center; justify-content: center; z-index: 100;
+            backdrop-filter: blur(10px); color: white;
+        }
+        #game-over-screen { display: none; background: rgba(80, 0, 0, 0.85); z-index: 200; }
+        
+        h1 { color: #f1c40f; font-size: 60px; margin-bottom: 10px; text-shadow: 4px 4px 0 #000, 0 0 20px #f39c12; letter-spacing: 3px; text-align: center;}
+        #game-over-screen h1 { color: #e74c3c; text-shadow: 4px 4px 0 #000, 0 0 20px #c0392b; }
+        
+        .selection-title { margin-top: 20px; font-size: 24px; border-bottom: 2px solid #fff; padding-bottom: 5px; }
+        .cards-container { display: flex; gap: 15px; margin: 15px 0; flex-wrap: wrap; justify-content: center; }
+        
+        .card {
+            width: 110px; height: 130px; background: #333; border: 4px solid #555;
+            border-radius: 10px; cursor: pointer; transition: 0.2s;
+            display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+            padding-bottom: 10px; font-size: 14px; font-weight: bold; box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+        }
+        .card:hover { transform: scale(1.05); }
+        .card.selected { border-color: #f1c40f; box-shadow: 0 0 20px #f1c40f; transform: scale(1.1); }
+        .color-preview { width: 70px; height: 70px; border-radius: 5px; margin-bottom: 10px; border: 2px solid #000; overflow: hidden; }
+        
+        .action-btn {
+            background: #27ae60; color: white; font-size: 30px; font-family: 'Arial Black', sans-serif;
+            padding: 15px 50px; border: none; border-radius: 8px; cursor: pointer; margin-top: 30px;
+            text-shadow: 2px 2px 0 #000; border-bottom: 6px solid #1e8449; transition: 0.1s;
+        }
+        .action-btn:active { transform: translateY(6px); border-bottom: 0px; }
+        #restart-btn { background: #f39c12; border-bottom: 6px solid #d68910; }
+        
+        /* --- ממשק המשחק --- */
+        #game-ui { display: none; }
+        #ui { position: absolute; top: 20px; left: 20px; color: white; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px; border: 2px solid #9b59b6; text-shadow: 1px 1px 2px black; pointer-events: none; z-index: 10; text-align: left; direction: ltr; font-size: 14px; }
+        #stats { position: absolute; bottom: 20px; right: 20px; color: white; background: rgba(0,0,0,0.7); padding: 15px; font-size: 22px; border-radius: 8px; border-right: 4px solid #f1c40f; text-shadow: 2px 2px 4px black; pointer-events: none; z-index: 10; text-align: left; direction: ltr;}
+        
+        #weapon-inventory { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; }
+        .inv-slot { background: rgba(0,0,0,0.6); border: 2px solid #555; border-radius: 5px; padding: 10px 15px; color: white; font-size: 16px; text-shadow: 1px 1px 2px black; }
+        .inv-slot.active { border-color: #f1c40f; background: rgba(50,50,50,0.8); box-shadow: 0 0 10px #f1c40f; transform: translateY(-5px); font-weight: bold;}
+
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; background: #fff; transform: translate(-50%, -50%); border-radius: 50%; box-shadow: 0 0 5px rgba(0,0,0,1); pointer-events: none; transition: 0.1s; z-index: 10; }
+        #crosshair::before, #crosshair::after, #crosshair-h::before, #crosshair-h::after { content:''; position:absolute; background:white; box-shadow: 0 0 3px black; transition: 0.1s; }
+        #crosshair::before { top: -12px; left: 1px; width: 2px; height: 8px; }
+        #crosshair::after { bottom: -12px; left: 1px; width: 2px; height: 8px; }
+        #crosshair-h { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+        #crosshair-h::before { left: -12px; top: -1px; width: 8px; height: 2px; }
+        #crosshair-h::after { right: -12px; top: -1px; width: 8px; height: 2px; }
+        
+        #scope-overlay { display: none; position: absolute; top: 50%; left: 50%; width: 600px; height: 600px; transform: translate(-50%, -50%); border-radius: 50%; box-shadow: 0 0 0 9999px rgba(0,0,0,0.95); border: 4px solid #111; pointer-events: none; z-index: 20; }
+        #scope-overlay::before { content:''; position:absolute; top:50%; left:0; right:0; height:2px; background:black; }
+        #scope-overlay::after { content:''; position:absolute; left:50%; top:0; bottom:0; width:2px; background:black; }
+        .scope-dot { position: absolute; top: 50%; left: 50%; width: 6px; height: 6px; background: red; border-radius: 50%; transform: translate(-50%, -50%); }
+
+        #storm-warning { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); color: #ff9ff3; font-size: 24px; text-shadow: 2px 2px 0 #000; display: none; z-index: 10; }
+        
+        .bar-container { width: 200px; height: 15px; background: #333; margin-top: 5px; border-radius: 5px; border: 2px solid #000; box-shadow: inset 0 0 5px black;}
+        #shield-bar { width: 100%; height: 100%; background: linear-gradient(90deg, #2980b9, #3498db); border-radius: 3px; transition: width 0.2s; }
+        #hp-bar { width: 100%; height: 100%; background: linear-gradient(90deg, #27ae60, #2ecc71); border-radius: 3px; transition: width 0.2s; }
+        span.wood { color: #f39c12; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <div id="start-screen">
+        <h1>BATTLE ROYALE - WEB</h1>
+        <div class="selection-title">בחר מפה:</div>
+        <div class="cards-container">
+            <div class="card selected map-card" data-map="classic" onclick="selectMap(this)">
+                <div class="color-preview" style="background: linear-gradient(#2980b9, #27ae60);"></div> קלאסי
+            </div>
+            <div class="card map-card" data-map="desert" onclick="selectMap(this)">
+                <div class="color-preview" style="background: linear-gradient(#f39c12, #e67e22);"></div> מדבר
+            </div>
+            <div class="card map-card" data-map="snow" onclick="selectMap(this)">
+                <div class="color-preview" style="background: linear-gradient(#ecf0f1, #bdc3c7);"></div> שלג
+            </div>
+            <div class="card map-card" data-map="lava" onclick="selectMap(this)">
+                <div class="color-preview" style="background: linear-gradient(#5a1000, #cf1020);"></div> הר געש
+            </div>
+            <div class="card map-card" data-map="neon" onclick="selectMap(this)">
+                <div class="color-preview" style="background: linear-gradient(#000010, #00ffff);"></div> עיר נאון
+            </div>
+            <div class="card map-card" data-map="boss" onclick="selectMap(this)">
+                <div class="color-preview" style="background: linear-gradient(#000000, #8b0000);"></div> בזאר הבוס
+            </div>
+        </div>
+        <div class="selection-title">בחר סקין:</div>
+        <div class="cards-container">
+            <div class="card selected skin-card" data-color="0x3498db" onclick="selectSkin(this)">
+                <div class="color-preview" style="background: #3498db;"></div> קלאסי
+            </div>
+            <div class="card skin-card" data-color="0xe74c3c" onclick="selectSkin(this)">
+                <div class="color-preview" style="background: #e74c3c;"></div> נינג'ה
+            </div>
+            <div class="card skin-card" data-special="dragon" onclick="selectSkin(this)">
+                <div class="color-preview" id="dragon-preview" style="background: #1e3718;"></div> דרקון
+            </div>
+        </div>
+        <button class="action-btn" onclick="startGame()">צנח למפה!</button>
+    </div>
+
+    <div id="game-over-screen">
+        <h1>GAME OVER</h1>
+        <h2 style="font-size: 40px; margin: 10px;">KILLS: <span id="final-kills">0</span></h2>
+        <button class="action-btn" id="restart-btn" onclick="location.reload()">חזור לבחירת מפות</button>
+    </div>
+
+    <div id="game-ui">
+        <div id="ui">
+            <strong>CONTROLS:</strong><br>
+            WASD = Move | SPACE = Jump | C = Crouch<br>
+            CLICK = Shoot/Farm | RIGHT CLICK = Aim<br>
+            <strong>1</strong> = Plasma AR | <strong>2</strong> = Railgun<br>
+            <strong>3</strong> = Heavy Shotgun | <strong>4</strong> = Lazer SMG<br>
+            <strong>Q / E</strong> = Build (10 Wood) | <strong>F</strong> = Loot House
+        </div>
+        <div id="storm-warning">🌪️ YOU ARE IN THE STORM! 🌪️</div>
+        
+        <div id="weapon-inventory">
+            <div id="slot-1" class="inv-slot active">[1] Plasma AR</div>
+            <div id="slot-2" class="inv-slot">[2] Railgun</div>
+            <div id="slot-3" class="inv-slot">[3] Heavy Shotgun</div>
+            <div id="slot-4" class="inv-slot">[4] Lazer SMG</div>
+        </div>
+
+        <div id="stats">
+            SHIELD: <span id="shield-text">100</span>
+            <div class="bar-container"><div id="shield-bar"></div></div>
+            HP: <span id="hp-text">100</span>
+            <div class="bar-container"><div id="hp-bar"></div></div>
+            <div id="boss-health" style="display:none; margin-top:12px;">
+                BOSS HP: <span id="boss-text">0</span>
+                <div class="bar-container"><div id="boss-bar" style="background: linear-gradient(90deg, #c0392b, #e74c3c);"></div></div>
+            </div>
+            <br>
+            WOOD: <span class="wood" id="wood">0</span> | KILLS: <span id="score">0</span>
+        </div>
+        <div id="crosshair"><div id="crosshair-h"></div></div>
+        <div id="scope-overlay"><div class="scope-dot"></div></div>
+    </div>
+
+<script>
+    let isGameStarted = false;
+
+    // --- SETUP & GRAPHICS ---
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2('#85c1e9', 0.002);
+    const camera = new THREE.PerspectiveCamera(80, window.innerWidth/window.innerHeight, 0.1, 1500);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    const ambientLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.7); scene.add(ambientLight);
+    const sun = new THREE.DirectionalLight(0xffeedd, 1.2);
+    sun.position.set(200, 400, 200); sun.castShadow = true;
+    sun.shadow.camera.top = 400; sun.shadow.camera.bottom = -400; sun.shadow.camera.left = -400; sun.shadow.camera.right = 400;
+    scene.add(sun);
+
+    const chestMat = new THREE.MeshStandardMaterial({color: 0xf1c40f, roughness: 0.5});
+    const buildMat = new THREE.MeshStandardMaterial({color: 0xd35400, roughness: 0.9}); 
+    
+    // --- חומרים לנשקים ---
+    const gunBodyMat = new THREE.MeshStandardMaterial({color: 0x1a1a1a, roughness: 0.4, metalness: 0.8});
+    const gunGreyMat = new THREE.MeshStandardMaterial({color: 0x444444, roughness: 0.6, metalness: 0.4});
+    const detailMatBlue = new THREE.MeshBasicMaterial({color: 0x00ffff});
+    const detailMatRed = new THREE.MeshBasicMaterial({color: 0xff0000});
+    const detailMatOrange = new THREE.MeshBasicMaterial({color: 0xffa500});
+    const detailMatPurple = new THREE.MeshBasicMaterial({color: 0x8a2be2});
+
+    const dragonCanvas = document.createElement('canvas'); dragonCanvas.width = 128; dragonCanvas.height = 128; const dCtx = dragonCanvas.getContext('2d');
+    dCtx.fillStyle = '#1e3718'; dCtx.fillRect(0,0,128,128); dCtx.strokeStyle = '#2ecc71'; dCtx.lineWidth = 1;
+    for(let i=0; i<128; i+=16) for(let j=0; j<128; j+=16) { dCtx.beginPath(); dCtx.arc(i+8, j+8, 8, 0, Math.PI); dCtx.stroke(); }
+    const dragonTex = new THREE.CanvasTexture(dragonCanvas); dragonTex.wrapS = dragonTex.wrapT = THREE.RepeatWrapping; dragonTex.repeat.set(2, 3);
+    const dragonMat = new THREE.MeshStandardMaterial({map: dragonTex, roughness: 0.8});
+    document.getElementById('dragon-preview').style.backgroundImage = `url(${dragonCanvas.toDataURL()})`;
+
+    const groundMat = new THREE.MeshStandardMaterial({roughness: 1});
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), groundMat);
+    ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; scene.add(ground);
+    const oceanMat = new THREE.MeshStandardMaterial({color: 0x1f618d, roughness: 0.1});
+    const ocean = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), oceanMat);
+    ocean.rotation.x = -Math.PI/2; ocean.position.y = -2; scene.add(ocean);
+
+    const interactables = []; const solidObjects = []; const groundWeapons = []; 
+    function removeObject(target) { scene.remove(target); if(interactables.includes(target)) interactables.splice(interactables.indexOf(target), 1); if(solidObjects.includes(target)) solidObjects.splice(solidObjects.indexOf(target), 1); }
+
+    // --- MAPS ---
+    let selectedMapType = 'classic';
+    function generateMapEnvironment(type) {
+        const gCanvas = document.createElement('canvas'); gCanvas.width = 1024; gCanvas.height = 1024; const gCtx = gCanvas.getContext('2d');
+        if (type === 'classic') {
+            scene.fog.color.setHex(0x85c1e9); oceanMat.color.setHex(0x1f618d);
+            gCtx.fillStyle = '#2980b9'; gCtx.fillRect(0, 0, 1024, 1024); gCtx.beginPath(); gCtx.arc(512, 512, 450, 0, Math.PI * 2); gCtx.clip();
+            gCtx.fillStyle = '#27ae60'; gCtx.fillRect(0, 0, 1024, 1024); gCtx.fillStyle = '#ecf0f1'; gCtx.beginPath(); gCtx.arc(300, 300, 300, 0, Math.PI * 2); gCtx.fill(); gCtx.fillStyle = '#f39c12'; gCtx.beginPath(); gCtx.arc(750, 750, 280, 0, Math.PI * 2); gCtx.fill(); 
+        } else if (type === 'desert') {
+            scene.fog.color.setHex(0xd4ac0d); oceanMat.color.setHex(0x85c1e9);
+            gCtx.fillStyle = '#85c1e9'; gCtx.fillRect(0, 0, 1024, 1024); gCtx.beginPath(); gCtx.arc(512, 512, 450, 0, Math.PI * 2); gCtx.clip();
+            gCtx.fillStyle = '#f39c12'; gCtx.fillRect(0, 0, 1024, 1024); gCtx.fillStyle = '#e67e22'; gCtx.beginPath(); gCtx.arc(400, 600, 200, 0, Math.PI * 2); gCtx.fill(); gCtx.fillStyle = '#27ae60'; gCtx.beginPath(); gCtx.arc(512, 512, 80, 0, Math.PI * 2); gCtx.fill(); 
+        } else if (type === 'snow') {
+            scene.fog.color.setHex(0xd6eaf8); oceanMat.color.setHex(0x154360); 
+            gCtx.fillStyle = '#154360'; gCtx.fillRect(0, 0, 1024, 1024); gCtx.beginPath(); gCtx.arc(512, 512, 450, 0, Math.PI * 2); gCtx.clip();
+            gCtx.fillStyle = '#ecf0f1'; gCtx.fillRect(0, 0, 1024, 1024); gCtx.fillStyle = '#85c1e9'; gCtx.beginPath(); gCtx.arc(700, 300, 100, 0, Math.PI * 2); gCtx.fill(); 
+        } else if (type === 'lava') { 
+            scene.fog.color.setHex(0x5a1000); oceanMat.color.setHex(0x880000); 
+            ambientLight.color.setHex(0xffaaaa);
+            gCtx.fillStyle = '#880000'; gCtx.fillRect(0, 0, 1024, 1024); gCtx.beginPath(); gCtx.arc(512, 512, 450, 0, Math.PI * 2); gCtx.clip();
+            gCtx.fillStyle = '#222222'; gCtx.fillRect(0, 0, 1024, 1024); 
+            gCtx.fillStyle = '#cf1020'; gCtx.beginPath(); gCtx.arc(500, 500, 150, 0, Math.PI * 2); gCtx.fill(); 
+            gCtx.fillStyle = '#e67e22'; gCtx.beginPath(); gCtx.arc(200, 800, 80, 0, Math.PI * 2); gCtx.fill();
+        } else if (type === 'neon') { 
+            scene.fog.color.setHex(0x0a0a1a); oceanMat.color.setHex(0x050510); 
+            ambientLight.color.setHex(0x8888ff); sun.color.setHex(0xff00ff);
+            gCtx.fillStyle = '#050510'; gCtx.fillRect(0, 0, 1024, 1024); gCtx.beginPath(); gCtx.arc(512, 512, 450, 0, Math.PI * 2); gCtx.clip();
+            gCtx.fillStyle = '#111116'; gCtx.fillRect(0, 0, 1024, 1024); 
+            gCtx.strokeStyle = '#00ffff'; gCtx.lineWidth = 2; 
+            for(let i=0; i<1024; i+=32) { gCtx.beginPath(); gCtx.moveTo(i,0); gCtx.lineTo(i,1024); gCtx.stroke(); gCtx.beginPath(); gCtx.moveTo(0,i); gCtx.lineTo(1024,i); gCtx.stroke(); }
+        } else if (type === 'boss') {
+            scene.fog.color.setHex(0x220000); oceanMat.color.setHex(0x000000);
+            ambientLight.color.setHex(0xffcccc); sun.color.setHex(0xff5500);
+            gCtx.fillStyle = '#120000'; gCtx.fillRect(0, 0, 1024, 1024); gCtx.beginPath(); gCtx.arc(512, 512, 450, 0, Math.PI * 2); gCtx.clip();
+            gCtx.fillStyle = '#2c0a0a'; gCtx.fillRect(0, 0, 1024, 1024);
+            gCtx.strokeStyle = '#ff4444'; gCtx.lineWidth = 6;
+            gCtx.beginPath(); gCtx.arc(512, 512, 320, 0, Math.PI * 2); gCtx.stroke();
+            gCtx.fillStyle = '#aa0000'; gCtx.beginPath(); gCtx.arc(512, 512, 90, 0, Math.PI * 2); gCtx.fill();
+            for (let i = 0; i < 16; i++) {
+                const angle = i / 16 * Math.PI * 2;
+                gCtx.strokeStyle = i % 2 === 0 ? '#ff0000' : '#660000';
+                gCtx.beginPath();
+                gCtx.moveTo(512 + Math.cos(angle) * 320, 512 + Math.sin(angle) * 320);
+                gCtx.lineTo(512 + Math.cos(angle) * 420, 512 + Math.sin(angle) * 420);
+                gCtx.stroke();
+            }
+        }
+        
+        for(let i=0; i<8000; i++) { gCtx.fillStyle = 'rgba(0,0,0,0.05)'; gCtx.fillRect(Math.random()*1024, Math.random()*1024, 2, 2); }
+        groundMat.map = new THREE.CanvasTexture(gCanvas); groundMat.needsUpdate = true;
+    }
+
+    function spawnTree(x, z, mapType) {
+        const tree = new THREE.Group();
+        let trunkColor = 0x4a2311;
+        if (mapType === 'neon') trunkColor = 0x222244;
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 1.0, 4, 8), new THREE.MeshStandardMaterial({color: trunkColor}));
+        trunk.position.y = 2; trunk.castShadow = trunk.receiveShadow = true; tree.add(trunk);
+        
+        let leafColor = 0x2ecc71; 
+        if (mapType === 'snow' || (mapType==='classic' && x < -50 && z < -50)) leafColor = 0xffffff; 
+        if (mapType === 'desert') leafColor = 0xa04000; 
+        if (mapType === 'lava') leafColor = 0x8b0000;
+        if (mapType === 'neon') leafColor = 0xff00ff;
+
+        const leavesMat = new THREE.MeshStandardMaterial({color: leafColor, flatShading: true, emissive: mapType==='neon'?0x330033:0x000000});
+        for(let i=0; i<2; i++) { const leaves = new THREE.Mesh(new THREE.ConeGeometry(4-i, 6-i, 8), leavesMat); leaves.position.y = 5 + i*3; leaves.castShadow = leaves.receiveShadow = true; tree.add(leaves); }
+        tree.position.set(x, 0, z); tree.userData = { type: 'tree', hp: 100 };
+        scene.add(tree); interactables.push(tree); solidObjects.push(tree); 
+    }
+
+    function spawnHouse(x, z, mapType) {
+        const house = new THREE.Group();
+        const wallColor = mapType === 'desert' ? 0xdcb27d : mapType === 'snow' ? 0xf5f5f5 : mapType === 'lava' ? 0x8b0000 : mapType === 'neon' ? 0x202040 : 0xffffff;
+        const roofColor = mapType === 'neon' ? 0xff00ff : 0x8b4513;
+
+        const walls = new THREE.Mesh(new THREE.BoxGeometry(6, 3, 5), new THREE.MeshStandardMaterial({color: wallColor}));
+        walls.position.y = 1.5; walls.castShadow = walls.receiveShadow = true; house.add(walls);
+
+        const roof = new THREE.Mesh(new THREE.ConeGeometry(4.2, 2.5, 4), new THREE.MeshStandardMaterial({color: roofColor}));
+        roof.position.set(0, 4, 0); roof.rotation.y = Math.PI / 4; roof.castShadow = true; house.add(roof);
+
+        const door = new THREE.Mesh(new THREE.BoxGeometry(1, 1.8, 0.15), new THREE.MeshStandardMaterial({color: 0x3c2f2f}));
+        door.position.set(0, 0.9, 2.6); house.add(door);
+
+        const windowMat = new THREE.MeshStandardMaterial({color: 0x87ceeb, emissive: 0x114477});
+        const window1 = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0.1), windowMat); window1.position.set(-1.8, 2, 2.6); house.add(window1);
+        const window2 = window1.clone(); window2.position.x = 1.8; house.add(window2);
+
+        house.position.set(x, 0, z);
+        house.userData = { type: 'house', hp: 220, looted: false, walls: walls, doorMesh: door };
+        scene.add(house); interactables.push(house); solidObjects.push(house);
+    }
+
+    function lootHouse(house) {
+        if (house.userData.looted) return;
+        house.userData.looted = true;
+        house.userData.walls.material.color.setHex(0x888888);
+        house.userData.walls.material.emissive.setHex(0x333333);
+        wood += 100;
+        for (let i = 0; i < 4; i++) {
+            const offsetX = (Math.random() - 0.5) * 5;
+            const offsetZ = (Math.random() - 0.5) * 5;
+            const weaponType = Math.floor(Math.random() * 4) + 1;
+            spawnWeaponLoot(house.position.x + offsetX, house.position.z + offsetZ, weaponType);
+        }
+    }
+
+    function tryLootNearbyHouse() {
+        for (let obj of interactables) {
+            if (obj.userData && obj.userData.type === 'house' && !obj.userData.looted) {
+                const dist = player.position.distanceTo(obj.position);
+                if (dist < 12) {
+                    lootHouse(obj);
+                    return;
+                }
+            }
+        }
+    }
+
+    function spawnWeaponLoot(x, z, weaponType) {
+        const lootColor = weaponType === 2 ? 0xff0000 : (weaponType === 3 ? 0xffa500 : 0x00ffff);
+        const lootMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 0.5, 0.5), new THREE.MeshStandardMaterial({color: lootColor, emissive: lootColor}));
+        lootMesh.position.set(x, 0.5, z);
+        lootMesh.userData = { type: 'loot', weaponId: weaponType };
+        scene.add(lootMesh);
+        groundWeapons.push(lootMesh);
+    }
+
+    let stormRadius = 450;
+    const stormGeo = new THREE.CylinderGeometry(stormRadius, stormRadius, 300, 32, 1, true);
+    const storm = new THREE.Mesh(stormGeo, new THREE.MeshBasicMaterial({color: 0x8e44ad, transparent: true, opacity: 0.35, side: THREE.BackSide}));
+    storm.position.y = 150; scene.add(storm);
+    let boss = null;
+    let bossActive = false;
+
+    // --- PLAYER ---
+    const player = new THREE.Group(); scene.add(player);
+    const bodyMat = new THREE.MeshStandardMaterial({color: 0x3498db, roughness: 0.4}); // Body material (used for hand too!)
+    
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.2, 0.4), bodyMat); body.position.y = 0.6; body.castShadow = true; player.add(body);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshStandardMaterial({color: 0xf1c27d})); head.position.y = 1.45; head.castShadow = true; player.add(head);
+    const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.0, 0.25), bodyMat); leftArm.position.set(-0.55, 0.9, 0); player.add(leftArm);
+    const rightArm = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.0, 0.25), bodyMat); rightArm.position.set(0.55, 0.9, 0); player.add(rightArm);
+
+    const dragonParts = new THREE.Group(); player.add(dragonParts);
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.2, 1.5, 4), dragonMat); tail.rotation.x = Math.PI / 1.8; tail.position.set(0, 0.5, 0.4); dragonParts.add(tail);
+    const wingMat = new THREE.MeshStandardMaterial({map: dragonTex, side: THREE.DoubleSide});
+    const lWing = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.2, 0.8), wingMat); lWing.position.set(-0.5, 1.0, 0.4); lWing.rotation.set(0.3, 0.3, 0); dragonParts.add(lWing);
+    const rWing = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.2, 0.8), wingMat); rWing.position.set(0.5, 1.0, 0.4); rWing.rotation.set(0.3, -0.3, 0); dragonParts.add(rWing);
+    const lHorn = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.3, 4), new THREE.MeshStandardMaterial({color: 0xeee})); lHorn.position.set(-0.2, 0.2, 0); head.add(lHorn);
+    const rHorn = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.3, 4), new THREE.MeshStandardMaterial({color: 0xeee})); rHorn.position.set(0.2, 0.2, 0); head.add(rHorn);
+    dragonParts.visible = false; lHorn.visible = false; rHorn.visible = false;
+
+    const gliderGroup = new THREE.Group();
+    const canopy = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.5, 0.1, 12), new THREE.MeshStandardMaterial({color: 0xe67e22})); canopy.position.y = 2.5; gliderGroup.add(canopy);
+    gliderGroup.visible = false; player.add(gliderGroup);
+
+    const pitch = new THREE.Object3D(); pitch.position.y = 1.45; player.add(pitch); 
+    camera.position.set(1.0, 0.2, 3); pitch.add(camera);
+
+    // --- UPGRADED WEAPON MODELS WITH HAND ---
+    const weaponGroup = new THREE.Group(); camera.add(weaponGroup);
+
+    // הוספת יד בגוף ראשון שמחזיקה את הנשק (משתמשת בסקין של השחקן)
+    const playerHand = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.2), bodyMat); 
+    playerHand.position.set(0.6, -0.45, -0.65);
+    playerHand.rotation.x = Math.PI / 8;
+    weaponGroup.add(playerHand);
+
+    // 1. Plasma AR
+    const arGroup = new THREE.Group();
+    const arBody = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, 0.8), gunBodyMat); arBody.position.set(0.6, -0.4, -1.0); arGroup.add(arBody);
+    const arBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.6), gunGreyMat); arBarrel.rotation.x = Math.PI/2; arBarrel.position.set(0.6, -0.35, -1.5); arGroup.add(arBarrel);
+    const arGlow = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.05, 0.4), detailMatBlue); arGlow.position.set(0.6, -0.35, -1.1); arGroup.add(arGlow);
+    const arMag = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.2, 0.15), gunBodyMat); arMag.position.set(0.6, -0.55, -1.0); arGroup.add(arMag);
+    const arSight = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.1), detailMatBlue); arSight.position.set(0.6, -0.25, -0.8); arGroup.add(arSight);
+    weaponGroup.add(arGroup);
+
+    // 2. Railgun (Sniper)
+    const sniperGroup = new THREE.Group();
+    const sniperBody = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, 1.2), gunBodyMat); sniperBody.position.set(0.6, -0.4, -1.2); sniperGroup.add(sniperBody);
+    const sniperBarrel = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 1.0), gunGreyMat); sniperBarrel.position.set(0.6, -0.35, -2.0); sniperGroup.add(sniperBarrel);
+    const sniperGlow = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.8), detailMatRed); sniperGlow.position.set(0.6, -0.35, -1.9); sniperGroup.add(sniperGlow);
+    const sniperScope = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.4), gunBodyMat); sniperScope.rotation.x = Math.PI/2; sniperScope.position.set(0.6, -0.2, -1.0); sniperGroup.add(sniperScope);
+    const sniperStock = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.25, 0.4), gunGreyMat); sniperStock.position.set(0.6, -0.45, -0.6); sniperGroup.add(sniperStock);
+    weaponGroup.add(sniperGroup);
+
+    // 3. Heavy Shotgun
+    const sgGroup = new THREE.Group();
+    const sgBody = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.25, 0.7), gunBodyMat); sgBody.position.set(0.6, -0.4, -0.9); sgGroup.add(sgBody);
+    const sgBarrel1 = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.6), gunGreyMat); sgBarrel1.rotation.x = Math.PI/2; sgBarrel1.position.set(0.55, -0.35, -1.4); sgGroup.add(sgBarrel1);
+    const sgBarrel2 = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.6), gunGreyMat); sgBarrel2.rotation.x = Math.PI/2; sgBarrel2.position.set(0.65, -0.35, -1.4); sgGroup.add(sgBarrel2);
+    const sgPump = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.1, 0.3), detailMatOrange); sgPump.position.set(0.6, -0.45, -1.3); sgGroup.add(sgPump);
+    weaponGroup.add(sgGroup);
+
+    // 4. Lazer SMG
+    const smgGroup = new THREE.Group();
+    const smgBody = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.2, 0.5), gunBodyMat); smgBody.position.set(0.6, -0.3, -0.8); smgGroup.add(smgBody);
+    const smgBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.4), detailMatPurple); smgBarrel.rotation.x = Math.PI/2; smgBarrel.position.set(0.6, -0.25, -1.1); smgGroup.add(smgBarrel);
+    const smgMag = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.2), gunGreyMat); smgMag.position.set(0.6, -0.45, -0.8); smgGroup.add(smgMag);
+    weaponGroup.add(smgGroup);
+
+    let currentWeapon = 1; 
+    function updateWeaponVisuals() {
+        arGroup.visible = (currentWeapon === 1);
+        sniperGroup.visible = (currentWeapon === 2);
+        sgGroup.visible = (currentWeapon === 3);
+        smgGroup.visible = (currentWeapon === 4);
+        for(let i=1; i<=4; i++) {
+            document.getElementById('slot-'+i).classList.toggle('active', currentWeapon === i);
+        }
+    }
+    updateWeaponVisuals();
+
+    // --- MENU ---
+    function selectMap(element) { document.querySelectorAll('.map-card').forEach(card => card.classList.remove('selected')); element.classList.add('selected'); selectedMapType = element.getAttribute('data-map'); }
+    function selectSkin(element) {
+        document.querySelectorAll('.skin-card').forEach(card => card.classList.remove('selected')); element.classList.add('selected'); const special = element.getAttribute('data-special');
+        if(special === 'dragon') { bodyMat.map = dragonTex; bodyMat.color.set(0xffffff); dragonParts.visible = true; head.children.forEach(horn => horn.visible = true); } 
+        else { bodyMat.map = null; bodyMat.color.setHex(parseInt(element.getAttribute('data-color'))); dragonParts.visible = false; head.children.forEach(horn => horn.visible = false); }
+        bodyMat.needsUpdate = true;
+    }
+
+    function startGame() {
+        document.getElementById('start-screen').style.display = 'none'; document.getElementById('game-ui').style.display = 'block';
+        generateMapEnvironment(selectedMapType);
+        if (selectedMapType === 'boss') {
+            interactables.filter(o => o.userData && o.userData.type === 'enemy').forEach(removeObject);
+            bossActive = true;
+            spawnBoss();
+        } else {
+            bossActive = false;
+            for(let i=0; i<80; i++) { let x = (Math.random()-0.5)*900, z = (Math.random()-0.5)*900; if(Math.sqrt(x*x + z*z) < 420) spawnTree(x, z, selectedMapType); }
+            for(let i=0; i<25; i++) { let x = (Math.random()-0.5)*800, z = (Math.random()-0.5)*800; if(Math.sqrt(x*x + z*z) < 420) { const chest = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.2, 1.2), chestMat); chest.position.set(x, 0.6, z); chest.userData = { type: 'chest', hp: 70 }; scene.add(chest); interactables.push(chest); solidObjects.push(chest); } }
+            for(let i=0; i<12; i++) { let x = (Math.random()-0.5)*500, z = (Math.random()-0.5)*500; if(Math.sqrt(x*x + z*z) < 420) spawnHouse(x, z, selectedMapType); }
+        }
+        isGameStarted = true; document.body.requestPointerLock();
+    }
+
+    // --- GAME STATE & CONTROLS ---
+    const maxHp = 100;
+    let hp = maxHp, shield = 100, wood = 0, score = 0;
+    let isGliding = true, velY = -15, keys = {}, isAiming = false, isCrouching = false;
+    let currentFloorY = 0; player.position.set(0, 200, 0);
+    const clock = new THREE.Clock(); const raycaster = new THREE.Raycaster(); const centerScreen = new THREE.Vector2(0, 0);
+
+    window.onkeydown = e => { 
+        if(!isGameStarted) return; keys[e.code] = true; 
+        if(e.code === 'Digit1') { currentWeapon = 1; updateWeaponVisuals(); unAim(); }
+        if(e.code === 'Digit2') { currentWeapon = 2; updateWeaponVisuals(); unAim(); }
+        if(e.code === 'Digit3') { currentWeapon = 3; updateWeaponVisuals(); unAim(); }
+        if(e.code === 'Digit4') { currentWeapon = 4; updateWeaponVisuals(); unAim(); }
+        if(e.code === 'KeyC') { isCrouching = true; player.scale.y = 0.5; pitch.position.y = 0.7; }
+        if (e.code === 'Space' && !e.repeat && document.pointerLockElement === document.body) { 
+            if (player.position.y <= currentFloorY + 0.2) velY = 16; 
+            else if (player.position.y > 4) { isGliding = !isGliding; if(isGliding) velY = Math.max(velY, -8); } 
+        } 
+    };
+
+    window.onkeyup = e => { keys[e.code] = false; if(e.code === 'KeyC') { isCrouching = false; player.scale.y = 1.0; pitch.position.y = 1.45; } };
+    
+    window.onmousedown = e => { if(!isGameStarted) return; if(document.pointerLockElement !== document.body) { document.body.requestPointerLock(); return; } if(e.button === 0 && !isGliding) shoot(); if(e.button === 2 && !isGliding) aim(); };
+    window.onmouseup = e => { if(e.button === 2) unAim(); };
+    
+    window.onmousemove = e => { 
+        if(isGameStarted && document.pointerLockElement === document.body) { 
+            const sens = isAiming ? (currentWeapon===2?0.0005:0.001) : 0.002; 
+            player.rotation.y -= e.movementX * sens; 
+            pitch.rotation.x -= e.movementY * sens; 
+            pitch.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch.rotation.x)); 
+        } 
+    };
+
+    function aim() { isAiming = true; if(currentWeapon === 2) { camera.fov = 15; document.getElementById('scope-overlay').style.display = 'block'; document.getElementById('crosshair').style.display = 'none'; weaponGroup.visible = false; } else { camera.fov = 50; } camera.updateProjectionMatrix(); }
+    function unAim() { isAiming = false; camera.fov = 80; camera.updateProjectionMatrix(); document.getElementById('scope-overlay').style.display = 'none'; document.getElementById('crosshair').style.display = 'block'; weaponGroup.visible = true; }
+
+    window.addEventListener('keypress', e => {
+        if(!isGameStarted || document.pointerLockElement !== document.body || isGliding) return;
+        const key = e.code;
+        if(key === 'KeyF') { tryLootNearbyHouse(); return; }
+        if((key !== 'KeyQ' && key !== 'KeyE') || wood < 10) return;
+        const buildDist = 3; const buildRot = Math.round(player.rotation.y / (Math.PI/2)) * (Math.PI/2);
+        const gridX = Math.round((player.position.x - (Math.sin(player.rotation.y)*buildDist)) / 3) * 3;
+        const gridZ = Math.round((player.position.z - (Math.cos(player.rotation.y)*buildDist)) / 3) * 3;
+        const gridY = Math.floor(player.position.y / 3) * 3 + 1.5; wood -= 10;
+        let piece; if(key === 'KeyQ') { piece = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 0.4), buildMat); piece.rotation.y = buildRot; piece.userData = {type:'wall',hp:150}; } else { piece = new THREE.Mesh(new THREE.BoxGeometry(3, 0.4, 4.2), buildMat); piece.rotation.y = buildRot; piece.rotation.x = -Math.PI/4; piece.userData = {type:'ramp',hp:150}; }
+        piece.position.set(gridX, gridY, gridZ); piece.castShadow = piece.receiveShadow = true; scene.add(piece); interactables.push(piece); solidObjects.push(piece); 
+    });
+
+    function shoot() {
+        let damage = 35; let recoil = 0.02; let tracerColor = 0x00ffff;
+        if(currentWeapon === 1) { damage = 35; recoil = 0.03; } 
+        else if(currentWeapon === 2) { damage = 100; recoil = 0.1; tracerColor = 0xff0000; } 
+        else if(currentWeapon === 3) { damage = 90; recoil = 0.08; tracerColor = 0xffa500; } 
+        else if(currentWeapon === 4) { damage = 15; recoil = 0.01; tracerColor = 0x8a2be2; } 
+
+        pitch.rotation.x += recoil; 
+        raycaster.setFromCamera(centerScreen, camera); const intersects = raycaster.intersectObjects(interactables, true);
+        let endPoint = intersects.length > 0 ? intersects[0].point : raycaster.ray.at(300, new THREE.Vector3());
+        let startPoint = camera.getWorldPosition(new THREE.Vector3()); startPoint.y -= 0.3;
+        
+        const distance = startPoint.distanceTo(endPoint);
+        const tracer = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, distance, 8), new THREE.MeshBasicMaterial({color: tracerColor, transparent: true, opacity: 1}));
+        tracer.geometry.translate(0, distance/2, 0); tracer.geometry.rotateX(Math.PI/2); tracer.position.copy(startPoint); tracer.lookAt(endPoint); scene.add(tracer);
+        const fade = setInterval(() => { tracer.material.opacity -= 0.15; if(tracer.material.opacity <= 0) { clearInterval(fade); scene.remove(tracer); } }, 30);
+        
+        if(intersects.length > 0) {
+            let target = intersects[0].object; while(target.parent && target.parent !== scene) target = target.parent; 
+            if(target.userData && target.userData.hp) {
+                target.userData.hp -= damage; target.scale.set(0.9,0.9,0.9); setTimeout(()=>target.scale.set(1,1,1),100);
+                if(target.userData.hp <= 0) {
+                    const type = target.userData.type; removeObject(target);
+                    if(type === 'enemy') { 
+                        score++; wood += 300; shield=Math.min(100,shield+25); 
+                        const randomWeapon = Math.floor(Math.random() * 4) + 1;
+                        spawnWeaponLoot(target.position.x, target.position.z, randomWeapon);
+                        spawnEnemy(); 
+                    } else if(type === 'boss') {
+                        boss = null; score += 10; document.getElementById('boss-health').style.display = 'none';
+                        document.getElementById('game-over-screen').style.display = 'flex';
+                        document.querySelector('#game-over-screen h1').innerText = 'ניצחת את הבוס!';
+                        document.getElementById('final-kills').innerText = score;
+                        isGameStarted = false; document.exitPointerLock();
+                    }
+                    else if(type==='tree') wood+=10; else if(type==='chest') { wood+=20; }
+                }
+            }
+        }
+    }
+
+    // --- ENEMIES ---
+    function spawnEnemy() {
+        const enGroup = new THREE.Group();
+        const enBody = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.2, 0.4), new THREE.MeshStandardMaterial({color: 0x2c3e50})); enBody.position.y = 0.6; enGroup.add(enBody);
+        const enHead = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshStandardMaterial({color: 0xe74c3c})); enHead.position.y = 1.45; enGroup.add(enHead);
+        const enLArm = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.0, 0.25), new THREE.MeshStandardMaterial({color: 0x2c3e50})); enLArm.position.set(-0.55, 0.9, 0); enGroup.add(enLArm);
+        const enRArm = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.0, 0.25), new THREE.MeshStandardMaterial({color: 0x2c3e50})); enRArm.position.set(0.55, 0.9, 0); enGroup.add(enRArm);
+        const botGun = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.15, 0.8), gunBodyMat); botGun.position.set(0.6, 0.6, 0.4); enGroup.add(botGun);
+
+        const angle = Math.random()*Math.PI*2; const dist = 60+Math.random()*80; enGroup.position.set(Math.cos(angle)*dist, 0, Math.sin(angle)*dist);
+        const enemySpeed = 0.1 + Math.random() * 0.08;
+        enGroup.userData = { type: 'enemy', hp: 70, shootCooldown: 1.8, speed: enemySpeed };
+        scene.add(enGroup); interactables.push(enGroup); solidObjects.push(enGroup);
+    }
+    for(let i=0; i<20; i++) spawnEnemy();
+
+    function spawnBoss() {
+        if (boss) removeObject(boss);
+        boss = new THREE.Group();
+        const bossBody = new THREE.Mesh(new THREE.BoxGeometry(3.5, 2.5, 1.2), new THREE.MeshStandardMaterial({color: 0x5e2a2a, emissive: 0x660000, roughness: 0.5})); bossBody.position.y = 1.25; boss.add(bossBody);
+        const bossHead = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.2), new THREE.MeshStandardMaterial({color: 0xff0000, emissive: 0x550000})); bossHead.position.set(0, 3.0, 0); boss.add(bossHead);
+        const bossLeft = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.8, 0.7), new THREE.MeshStandardMaterial({color: 0x5e2a2a})); bossLeft.position.set(-2.0, 1.2, 0); boss.add(bossLeft);
+        const bossRight = bossLeft.clone(); bossRight.position.x = 2.0; boss.add(bossRight);
+        const bossGun = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 1.4), gunBodyMat); bossGun.position.set(0, 2.3, 0.95); boss.add(bossGun);
+        boss.position.set(0, 0, -90);
+        boss.userData = { type: 'boss', hp: 500, shootCooldown: 1.2, baseSpeed: 0.08, speed: 0.08, lastDodge: 0, dodgeDirection: 1 };
+        scene.add(boss); interactables.push(boss); solidObjects.push(boss);
+    }
+
+    function botShoot(bot) {
+        let start = bot.position.clone(); start.y += 1.0; 
+        let end = player.position.clone(); end.y += 0.8; 
+        
+        const dist = start.distanceTo(end);
+        const spread = dist < 40 ? 4 : 7;
+        const missX = (Math.random() - 0.5) * spread;
+        const missZ = (Math.random() - 0.5) * spread;
+        end.x += missX;
+        end.z += missZ;
+        const tracer = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, dist, 8), new THREE.MeshBasicMaterial({color: 0xff0000, transparent: true, opacity: 1}));
+        tracer.geometry.translate(0, dist/2, 0); tracer.geometry.rotateX(Math.PI/2); tracer.position.copy(start); tracer.lookAt(end); scene.add(tracer);
+        setInterval(() => { tracer.material.opacity -= 0.15; if(tracer.material.opacity <= 0) scene.remove(tracer); }, 30);
+        
+        const isHit = Math.abs(missX) < 1.5 && Math.abs(missZ) < 1.5;
+        if (isHit) {
+            const damage = bot.userData.type === 'boss' ? (dist < 40 ? 8 : 5) : 5;
+            if (shield > 0) { shield -= damage; if(shield < 0) { hp += shield; shield = 0; } } else hp -= damage;
+        }
+    }
+
+    function checkHorizontalCollision(pos) {
+        const pBox = new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(pos.x, pos.y+0.6, pos.z), new THREE.Vector3(0.8, 1.2, 0.8));
+        for(let obj of solidObjects) { 
+            if(!obj.parent || (obj.userData && obj.userData.type === 'loot')) continue; 
+            const objBox = new THREE.Box3().setFromObject(obj);
+            if(pBox.intersectsBox(objBox)) return true;
+        }
+        return false;
+    }
+
+    // --- MAIN LOOP ---
+    function animate() {
+        requestAnimationFrame(animate);
+        if (!isGameStarted) { renderer.render(scene, camera); return; }
+
+        for(let i = groundWeapons.length - 1; i >= 0; i--) {
+            const loot = groundWeapons[i]; loot.rotation.y += 0.02; 
+            if(player.position.distanceTo(loot.position) < 3) {
+                currentWeapon = loot.userData.weaponId; updateWeaponVisuals();
+                scene.remove(loot); groundWeapons.splice(i, 1);
+            }
+        }
+
+        const speed = isCrouching ? 0.15 : 0.4; 
+        let dir = new THREE.Vector3();
+        if(keys['KeyW']) dir.z -= speed;
+        if(keys['KeyS']) dir.z += speed;
+        if(keys['KeyA']) dir.x -= speed;
+        if(keys['KeyD']) dir.x += speed;
+
+        dir.applyEuler(new THREE.Euler(0, player.rotation.y, 0));
+        let nextPos = player.position.clone().add(dir);
+        if(!checkHorizontalCollision(nextPos)) { player.position.x = nextPos.x; player.position.z = nextPos.z; }
+
+        velY -= 0.4; player.position.y += velY;
+        if(player.position.y <= currentFloorY) { player.position.y = currentFloorY; velY = 0; isGliding = false; }
+
+        document.getElementById('hp-text').innerText = Math.floor(hp);
+        document.getElementById('hp-bar').style.width = Math.max(0, Math.min(100, hp / maxHp * 100)) + '%';
+        document.getElementById('shield-text').innerText = Math.floor(shield);
+        document.getElementById('shield-bar').style.width = Math.max(0, shield) + '%';
+        document.getElementById('wood').innerText = wood;
+        document.getElementById('score').innerText = score;
+
+        if (bossActive && boss) {
+            document.getElementById('boss-health').style.display = 'block';
+            document.getElementById('boss-text').innerText = Math.max(0, Math.floor(boss.userData.hp));
+            document.getElementById('boss-bar').style.width = Math.max(0, Math.min(100, boss.userData.hp / 5.5)) + '%';
+        } else {
+            document.getElementById('boss-health').style.display = 'none';
+        }
+
+        if(score >= 30 && !bossActive) {
+            document.getElementById('game-over-screen').style.display = 'flex';
+            document.querySelector('#game-over-screen h1').innerText = 'ניצחתה';
+            document.getElementById('final-kills').innerText = score;
+            isGameStarted = false; document.exitPointerLock();
+        } else if(hp <= 0) {
+            document.getElementById('game-over-screen').style.display = 'flex';
+            document.querySelector('#game-over-screen h1').innerText = 'GAME OVER';
+            document.getElementById('final-kills').innerText = score;
+            isGameStarted = false; document.exitPointerLock();
+        }
+
+        const currentTime = clock.getElapsedTime();
+        for (let obj of interactables) {
+            if (obj.userData && obj.userData.type === 'enemy') {
+                obj.lookAt(player.position.x, obj.position.y, player.position.z);
+                const dist = obj.position.distanceTo(player.position);
+                
+                if (dist > 18 && dist < 180) {
+                    const moveSpeed = obj.userData.speed * (dist > 60 ? 1.3 : 1);
+                    obj.translateZ(moveSpeed);
+                }
+                
+                if (dist < 140 && score < 30) {
+                    if (!obj.userData.lastShot || currentTime - obj.userData.lastShot > obj.userData.shootCooldown) {
+                        botShoot(obj);
+                        obj.userData.lastShot = currentTime;
+                    }
+                }
+            }
+            if (obj.userData && obj.userData.type === 'boss') {
+                obj.lookAt(player.position.x, obj.position.y, player.position.z);
+                const dist = obj.position.distanceTo(player.position);
+                if (dist > 40) {
+                    const movement = obj.userData.baseSpeed * (dist > 120 ? 1.6 : 1.1);
+                    obj.translateZ(movement);
+                } else {
+                    if (!obj.userData.lastDodge || currentTime - obj.userData.lastDodge > 0.8) {
+                        obj.userData.dodgeDirection = Math.random() > 0.5 ? 1 : -1;
+                        obj.userData.lastDodge = currentTime;
+                    }
+                    obj.translateX(obj.userData.dodgeDirection * 0.45);
+                }
+                if (dist < 140) {
+                    const cooldown = dist < 50 ? 0.9 : obj.userData.shootCooldown;
+                    if (!obj.userData.lastShot || currentTime - obj.userData.lastShot > cooldown) {
+                        botShoot(obj);
+                        obj.userData.lastShot = currentTime;
+                    }
+                }
+            }
+        }
+
+        renderer.render(scene, camera);
+    }
+    
+    animate();
+</script>
+</body>
+</html>
